@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "pybind11>=2.10.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pytq"
+version = "1.0.0"
+description = "Python bindings for TQ - a jq-style query engine for TOON data"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {text = "MIT"}
+authors = [
+    {name = "TQ Project"}
+]
+keywords = ["tq", "query", "json", "toon", "jq"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: C++",
+]
+
+[project.urls]
+Homepage = "https://github.com/tq-project/tq"
+Documentation = "https://github.com/tq-project/tq/docs"
+Repository = "https://github.com/tq-project/tq"

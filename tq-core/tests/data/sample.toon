@@ -1,0 +1,22 @@
+users[3]:
+  - id: 1
+    name: Alice Johnson
+    email: alice@example.com
+    age: 30
+    active: true
+    roles[2]: admin,user
+  - id: 2
+    name: Bob Smith
+    email: bob@example.com
+    age: 25
+    active: true
+    roles[1]: user
+  - id: 3
+    name: Carol Williams
+    email: carol@example.com
+    age: 35
+    active: false
+    roles[2]: user,moderator
+metadata:
+  count: 3
+  version: "1.0"
