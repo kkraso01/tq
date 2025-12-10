@@ -11,11 +11,11 @@ std::vector<std::string> query(const std::string& expression, const std::string&
     auto tokens = lexer.tokenize();
     
     Parser parser(std::move(tokens));
-    auto steps = parser.parse();
+    auto query_obj = parser.parse();
     
     // Evaluate
     Evaluator evaluator;
-    auto results = evaluator.evaluate(steps, data_value);
+    auto results = evaluator.eval(query_obj.root, data_value);
     
     // Convert results to TOON strings
     std::vector<std::string> toon_results;
@@ -34,11 +34,11 @@ std::vector<Value> query_values(const std::string& expression, const Value& data
     auto tokens = lexer.tokenize();
     
     Parser parser(std::move(tokens));
-    auto steps = parser.parse();
+    auto query_obj = parser.parse();
     
     // Evaluate
     Evaluator evaluator;
-    return evaluator.evaluate(steps, data);
+    return evaluator.eval(query_obj.root, data);
 }
 
 } // namespace tq

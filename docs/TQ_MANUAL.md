@@ -1,6 +1,6 @@
 # TQ Manual - Complete Reference
 
-> **TQ is jq for TOON** — A complete query language for structured data with columnar/tabular awareness.
+> **TQ is jq for TOON**  A complete query language for structured data with columnar/tabular awareness.
 
 **Version:** 0.2.0 (Phase 2 in development)  
 **Last Updated:** December 10, 2025
@@ -165,7 +165,7 @@ tq '.missing?' data.json
 
 #### Array Index: `.[n]`
 
-✅ **Implemented** (Phase 2)
+ **Implemented** (Phase 2)
 
 ```bash
 echo '[10,20,30]' | tq '.[0]'
@@ -177,7 +177,7 @@ echo '[10,20,30]' | tq '.[-1]'
 
 #### Array Slice: `.[start:end]`
 
-✅ **Implemented** (Phase 2)
+ **Implemented** (Phase 2)
 
 ```bash
 echo '[1,2,3,4,5]' | tq '.[1:4]'
@@ -192,7 +192,7 @@ echo '[1,2,3,4,5]' | tq '.[:3]'
 
 #### Array Iterator: `.[]`
 
-✅ **Implemented** (Phase 1)
+ **Implemented** (Phase 1)
 
 ```bash
 echo '[1,2,3]' | tq '.[]'
@@ -203,7 +203,7 @@ echo '[1,2,3]' | tq '.[]'
 
 ### Pipe Operator: `|`
 
-✅ **Implemented** (Phase 2)
+ **Implemented** (Phase 2)
 
 Chains operations left-to-right.
 
@@ -215,7 +215,7 @@ tq '.items | .[] | .price' data.json
 
 ### Comma Operator: `,`
 
-📋 **Planned** (Phase 2)
+ **Planned** (Phase 2)
 
 Produces multiple outputs.
 
@@ -227,7 +227,7 @@ tq '.foo, .bar' data.json
 
 ## Operators & Functions
 
-### Comparison (📋 Planned Phase 2)
+### Comparison ( Planned Phase 2)
 
 | Operator | Description | Example |
 |----------|-------------|---------|
@@ -238,7 +238,7 @@ tq '.foo, .bar' data.json
 | `>` | Greater than | `.score > 90` |
 | `>=` | Greater or equal | `.count >= 10` |
 
-### Arithmetic (📋 Planned Phase 2)
+### Arithmetic ( Planned Phase 2)
 
 | Operator | Description | Example |
 |----------|-------------|---------|
@@ -248,7 +248,7 @@ tq '.foo, .bar' data.json
 | `/` | Division | `.sum / .count` |
 | `%` | Modulo | `.num % 2` |
 
-### Logical (📋 Planned Phase 2)
+### Logical ( Planned Phase 2)
 
 | Operator | Description | Example |
 |----------|-------------|---------|
@@ -257,7 +257,7 @@ tq '.foo, .bar' data.json
 | `not` | Logical NOT | `not .deleted` |
 | `//` | Alternative | `.name // "unknown"` |
 
-### Type Operations (📋 Planned Phase 2-3)
+### Type Operations ( Planned Phase 2-3)
 
 ```bash
 # Type checking
@@ -273,7 +273,7 @@ keys, keys_unsorted     # Object keys or array indices
 values                  # Object values
 ```
 
-### Array Functions (📋 Planned Phase 2-3)
+### Array Functions ( Planned Phase 2-3)
 
 ```bash
 # Selection & transformation
@@ -297,7 +297,7 @@ indices(x)              # All indices
 inside(x)               # Inverse of contains
 ```
 
-### String Functions (📋 Planned Phase 2-3)
+### String Functions ( Planned Phase 2-3)
 
 ```bash
 # Case conversion
@@ -312,7 +312,7 @@ trim, ltrim, rtrim      # Trim whitespace
 # Splitting & joining
 split(",")              # Split on delimiter
 join(",")               # Join with delimiter
-explode, implode        # String ↔ codepoints
+explode, implode        # String  codepoints
 
 # Searching
 startswith("str")       # Check prefix
@@ -321,7 +321,7 @@ test("regex")           # Test regex match
 match("regex")          # Get match object
 ```
 
-### Conditional Expressions (📋 Planned Phase 2)
+### Conditional Expressions ( Planned Phase 2)
 
 ```bash
 # if-then-else
@@ -341,7 +341,7 @@ end
 try .field catch "default"
 ```
 
-### Object Operations (📋 Planned Phase 3)
+### Object Operations ( Planned Phase 3)
 
 ```bash
 # Construction
@@ -360,7 +360,7 @@ to_entries              # [{key:k, value:v}, ...]
 from_entries            # Inverse of to_entries
 ```
 
-### Path Operations (📋 Planned Phase 3)
+### Path Operations ( Planned Phase 3)
 
 ```bash
 path(.a.b)              # Get path as array
@@ -375,7 +375,7 @@ paths(filter)           # Filtered paths
 
 ## Advanced Features
 
-### Variables (📋 Planned Phase 3-4)
+### Variables ( Planned Phase 3-4)
 
 ```bash
 # Bind variable
@@ -388,7 +388,7 @@ paths(filter)           # Filtered paths
 "value" as $x | {foo: $x, bar: $x}
 ```
 
-### Functions (📋 Planned Phase 3-4)
+### Functions ( Planned Phase 3-4)
 
 ```bash
 # Define function
@@ -401,7 +401,7 @@ def multiply(n): . * n;
 def addvalue($x): map(. + $x);
 ```
 
-### Reduce & Foreach (📋 Planned Phase 4)
+### Reduce & Foreach ( Planned Phase 4)
 
 ```bash
 # Reduce
@@ -416,7 +416,7 @@ first(.users[])
 last(.events[])
 ```
 
-### Regular Expressions (📋 Planned Phase 3)
+### Regular Expressions ( Planned Phase 3)
 
 ```bash
 # Test
@@ -440,7 +440,7 @@ scan("pattern")
 
 ## TOON-Specific Features
 
-### Column Projection (📋 Planned Phase 3)
+### Column Projection ( Planned Phase 3)
 
 Select specific columns from tabular data:
 
@@ -458,7 +458,7 @@ Select specific columns from tabular data:
 .orders{id, customer{name,email}}
 ```
 
-### Row Blocks (📋 Planned Phase 3)
+### Row Blocks ( Planned Phase 3)
 
 Fetch limited rows with specific columns:
 
@@ -470,7 +470,7 @@ Fetch limited rows with specific columns:
 .transactions[1000:2000]{id,amount,date}
 ```
 
-### Streaming Aggregations (📋 Planned Phase 4-5)
+### Streaming Aggregations ( Planned Phase 4-5)
 
 Constant-memory aggregations:
 
@@ -482,7 +482,7 @@ tq '.transactions[] | .amount | sum()' huge.toon --stream
 tq '.events | group_by(.type) | count()' data.toon --parallel 16
 ```
 
-### SQL-Like Operations (📋 Planned Phase 4)
+### SQL-Like Operations ( Planned Phase 4)
 
 ```bash
 # Complex analytics
@@ -635,7 +635,7 @@ Current performance (Phase 1-2, sample data):
 
 ## Roadmap & Status
 
-### ✅ Phase 1: Basic Queries (COMPLETED)
+###  Phase 1: Basic Queries (COMPLETED)
 
 - [x] Field access: `.field`, `.nested.field`
 - [x] Array iteration: `.[]`, `.field[]`
@@ -645,7 +645,7 @@ Current performance (Phase 1-2, sample data):
 - [x] Python bindings
 - [x] Comprehensive tests
 
-### 🚧 Phase 2: jq Core Features (IN PROGRESS)
+###  Phase 2: jq Core Features (IN PROGRESS)
 
 #### Completed:
 - [x] Pipe operator: `|`
@@ -661,7 +661,7 @@ Current performance (Phase 1-2, sample data):
 - [ ] `select()` and `map()`
 - [ ] Type functions
 
-### 📋 Phase 3: TOON Power Features (PLANNED)
+###  Phase 3: TOON Power Features (PLANNED)
 
 - [ ] Column projections: `.users{name,email}`
 - [ ] Row expressions with computed fields
@@ -672,7 +672,7 @@ Current performance (Phase 1-2, sample data):
 - [ ] Regular expressions
 - [ ] Variables and functions
 
-### 📋 Phase 4: Analytics (PLANNED)
+###  Phase 4: Analytics (PLANNED)
 
 - [ ] Advanced grouping and aggregation
 - [ ] Multi-key sorting
@@ -681,7 +681,7 @@ Current performance (Phase 1-2, sample data):
 - [ ] Statistical functions
 - [ ] `reduce` and `foreach`
 
-### 📋 Phase 5: Big Data (PLANNED)
+###  Phase 5: Big Data (PLANNED)
 
 - [ ] Streaming mode: `--stream`
 - [ ] Parallel processing: `--parallel`
@@ -689,7 +689,7 @@ Current performance (Phase 1-2, sample data):
 - [ ] SIMD optimizations
 - [ ] Memory-mapped I/O
 
-### 📋 Phase 6: Advanced (PLANNED)
+###  Phase 6: Advanced (PLANNED)
 
 - [ ] User-defined functions
 - [ ] Module system

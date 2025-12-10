@@ -20,8 +20,6 @@ set(TQ_SOURCES
     src/evaluator.cpp
     src/toon_parser.cpp
     src/tq.cpp
-    src/new_parser.cpp
-    src/new_evaluator.cpp
 )
 
 set(TQ_HEADERS
@@ -32,8 +30,6 @@ set(TQ_HEADERS
     include/tq/toon_parser.hpp
     include/tq/tq.hpp
     include/tq/ast.hpp
-    include/tq/new_parser.hpp
-    include/tq/new_evaluator.hpp
 )
 
 # Core library

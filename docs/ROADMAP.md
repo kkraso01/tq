@@ -1,12 +1,12 @@
 # TQ Roadmap: jq for TOON
 
-**Vision**: TQ is to TOON what jq is to JSON — a powerful, elegant query language for structured data.
+**Vision**: TQ is to TOON what jq is to JSON  a powerful, elegant query language for structured data.
 
 But because **TOON is columnar + tabular**, TQ can be **more powerful** than jq when querying structured tables.
 
 ---
 
-## 🎯 Core Philosophy
+##  Core Philosophy
 
 ```
 TQ = jq semantics + SQL-like table handling + TOON-native performance
@@ -18,7 +18,7 @@ TQ = jq semantics + SQL-like table handling + TOON-native performance
 | ------------------- | ---------------- | -------------------------- |
 | Input format        | JSON             | **TOON** (+ JSON)          |
 | Data model          | Tree             | **Table + Tree Hybrid**    |
-| Row blocks          | ❌ no             | **✔ users[100]{name,age}** |
+| Row blocks          |  no             | ** users[100]{name,age}** |
 | Column selection    | requires mapping | **native**                 |
 | Streaming rows      | manual           | **built-in**               |
 | Analytics possible? | cumbersome       | **potentially SQL-like**   |
@@ -47,9 +47,9 @@ tq ".transactions[]" data.toon --output results.toon
 
 ---
 
-## 📌 Feature Implementation Roadmap
+##  Feature Implementation Roadmap
 
-### ✅ Phase 1: Basic Path Queries (COMPLETED)
+###  Phase 1: Basic Path Queries (COMPLETED)
 
 **Status**: Fully implemented and tested
 
@@ -71,7 +71,7 @@ tq '.users[].email' sample.json
 
 ---
 
-### 🔥 Phase 2: jq-Compatible Operators (IN PROGRESS)
+###  Phase 2: jq-Compatible Operators (IN PROGRESS)
 
 **Goal**: Implement all core jq features for full compatibility
 
@@ -120,7 +120,7 @@ tq '.users[].email' sample.json
 
 ---
 
-### 🧠 Phase 3: TOON-Specific Power Features
+###  Phase 3: TOON-Specific Power Features
 
 **Goal**: Leverage TOON's columnar/tabular nature for advanced queries
 
@@ -161,7 +161,7 @@ tq '.users | group_by(.status) | count()' users.toon
 
 ---
 
-### 🚀 Phase 4: Full Analytic Mode (SQL-LIKE)
+###  Phase 4: Full Analytic Mode (SQL-LIKE)
 
 **Goal**: Make TQ a legitimate alternative to SQL for data analysis
 
@@ -204,7 +204,7 @@ tq '.sales | where(.amount > 1000) | group_by(.region) | {region, total: sum(.am
 
 ---
 
-### 💣 Phase 5: Streaming Big Data Mode
+###  Phase 5: Streaming Big Data Mode
 
 **Goal**: Handle massive datasets with constant memory usage
 
@@ -219,10 +219,10 @@ tq '.sales | where(.amount > 1000) | group_by(.region) | {region, total: sum(.am
 - [ ] GPU offload: For massive aggregations (future)
 
 #### 5.3 Format Conversions
-- [ ] TOON ↔ JSON: Seamless conversion
-- [ ] TOON ↔ CSV: Direct CSV parsing/writing
-- [ ] TOON ↔ Parquet: Columnar format interop
-- [ ] TOON ↔ Arrow: Zero-copy integration
+- [ ] TOON  JSON: Seamless conversion
+- [ ] TOON  CSV: Direct CSV parsing/writing
+- [ ] TOON  Parquet: Columnar format interop
+- [ ] TOON  Arrow: Zero-copy integration
 
 **Examples**:
 ```bash
@@ -238,7 +238,7 @@ tq ".[]" data.csv --input-format csv --output-format toon > data.toon
 
 ---
 
-### 🌟 Phase 6: Advanced Features
+###  Phase 6: Advanced Features
 
 #### 6.1 User-Defined Functions
 - [ ] Define functions: `def double: . * 2;`
@@ -262,32 +262,32 @@ tq ".[]" data.csv --input-format csv --output-format toon > data.toon
 
 ---
 
-## 🎯 Path to Fame & Adoption
+##  Path to Fame & Adoption
 
-### Current Status: **Step 3/8** 🎉
+### Current Status: **Step 3/8** 
 
 | Step | Description | Status |
 |------|-------------|--------|
-| 1 | ✅ Fully support TOON spec | **DONE** (Phase 1) |
-| 2 | ✅ Provide CLI binary | **DONE** (Windows/Linux/macOS) |
-| 3 | ✅ Python package | **DONE** (`pip install tq`) |
-| 4 | 📝 Blog post "Introducing TQ" | **TODO** |
-| 5 | 📊 Benchmarks vs jq | **TODO** |
-| 6 | 📚 Examples gallery | **TODO** |
-| 7 | 🔧 VSCode extension | **TODO** |
-| 8 | 🌐 Web playground (WASM) | **TODO** |
+| 1 |  Fully support TOON spec | **DONE** (Phase 1) |
+| 2 |  Provide CLI binary | **DONE** (Windows/Linux/macOS) |
+| 3 |  Python package | **DONE** (`pip install tq`) |
+| 4 |  Blog post "Introducing TQ" | **TODO** |
+| 5 |  Benchmarks vs jq | **TODO** |
+| 6 |  Examples gallery | **TODO** |
+| 7 |  VSCode extension | **TODO** |
+| 8 |  Web playground (WASM) | **TODO** |
 
 ---
 
-## 🏆 Why This Matters
+##  Why This Matters
 
 Nobody has:
 
-✔ **A native TOON query engine**  
-✔ **Implemented in C++ (fast)**  
-✔ **pip + CLI runnable**  
-✔ **Spec-aware, future-proof**  
-✔ **Built like jq but table-smart**
+ **A native TOON query engine**  
+ **Implemented in C++ (fast)**  
+ **pip + CLI runnable**  
+ **Spec-aware, future-proof**  
+ **Built like jq but table-smart**
 
 You're entering a space **before it explodes**, like:
 - YAML in 2001
@@ -298,7 +298,7 @@ You're entering a space **before it explodes**, like:
 
 ---
 
-## 📚 Resources
+##  Resources
 
 - [jq Manual](https://jqlang.github.io/jq/manual/) - Reference for feature parity
 - [TOON Spec](https://github.com/toon-format/spec) - Official TOON specification
@@ -307,7 +307,7 @@ You're entering a space **before it explodes**, like:
 
 ---
 
-## 🤝 Contributing
+##  Contributing
 
 See individual phase docs in `docs/PHASE_*.md` for implementation details.
 
