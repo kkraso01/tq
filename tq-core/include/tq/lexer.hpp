@@ -77,6 +77,9 @@ enum class TokenType {
     While,         // while
     Until,         // until
     
+    // Format functions
+    Format,        // @base64, @uri, @csv, etc.
+    
     // Function names (built-ins)
     Select,        // select
     Map,           // map

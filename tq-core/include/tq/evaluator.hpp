@@ -6,6 +6,7 @@
 #include <map>
 #include <string>
 #include <functional>
+#include <queue>
 
 namespace tq {
 
@@ -20,6 +21,9 @@ class Evaluator {
 public:
     Evaluator();
     
+    // Set input values for input/inputs functions
+    void set_input_values(const std::vector<Value>& values);
+    
     // Evaluate expression against data, returning multiple results (jq stream semantics)
     std::vector<Value> eval(const ExprPtr& expr, const Value& data);
     
@@ -32,6 +36,9 @@ private:
     
     // Variable environment (for as-patterns, reduce, etc.)
     std::map<std::string, Value> vars_;
+    
+    // Input stream for input/inputs functions
+    std::queue<Value> input_stream_;
     
     // Register all built-in functions
     void register_builtins();
@@ -119,8 +126,51 @@ private:
     std::vector<Value> builtin_error(const std::vector<std::vector<Value>>& args);
     std::vector<Value> builtin_debug(const std::vector<std::vector<Value>>& args);
     std::vector<Value> builtin_not(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_paths(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_leaf_paths(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_keys_unsorted(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_min_by_value(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_max_by_value(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_to_array(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_to_object(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_combinations(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_numbers(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_strings(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_arrays(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_objects(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_nulls(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_booleans(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_scalars(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_iterables(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_ascii(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_implode(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_explode(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_tojsonstream(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_fromjsonstream(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_walk(const ExprPtr& expr, const Value& data);
     std::vector<Value> builtin_sqrt(const std::vector<std::vector<Value>>& args);
     std::vector<Value> builtin_empty(const std::vector<std::vector<Value>>& args);
+    
+    // Date/time functions
+    std::vector<Value> builtin_now(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_gmtime(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_mktime(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_strftime(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_strptime(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_todate(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_fromdate(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_todateiso8601(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_fromdateiso8601(const std::vector<std::vector<Value>>& args);
+    
+    // Format functions (@base64, @uri, @csv, @tsv, @html, @json, @text, @base64d)
+    std::vector<Value> builtin_format_base64(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_format_base64d(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_format_uri(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_format_csv(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_format_tsv(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_format_html(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_format_json(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_format_text(const std::vector<std::vector<Value>>& args);
     
     // Expression-based built-ins
     std::vector<Value> builtin_map(const ExprPtr& expr, const Value& data);
@@ -132,6 +182,14 @@ private:
     std::vector<Value> builtin_max_by(const ExprPtr& expr, const Value& data);
     std::vector<Value> builtin_any(const ExprPtr& expr, const Value& data);
     std::vector<Value> builtin_all(const ExprPtr& expr, const Value& data);
+    
+    // I/O and SQL-style functions
+    std::vector<Value> builtin_limit(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_input(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_inputs(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_INDEX(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_IN(const std::vector<std::vector<Value>>& args);
+    std::vector<Value> builtin_GROUP_BY_advanced(const ExprPtr& expr, const Value& data);
     
     // ... many more
 };

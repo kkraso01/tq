@@ -360,6 +360,14 @@ ExprPtr Parser::parse_primary() {
         return call_expr;
     }
     
+    // Format functions (@base64, @uri, @csv, etc.)
+    if (match(TokenType::Format)) {
+        std::string format_name = tokens_[pos_ - 1].value;
+        auto call_expr = std::make_shared<Expr>(ExprType::FunctionCall);
+        call_expr->func_name = "@" + format_name;
+        return call_expr;
+    }
+    
     // Built-in function names
     if (match(TokenType::Select) || match(TokenType::Map) || 
         match(TokenType::Empty) || match(TokenType::Error)) {

@@ -352,6 +352,20 @@ std::vector<Token> Lexer::tokenize() {
                 }
                 break;
                 
+            case '@':
+                {
+                    // Format function: @base64, @uri, @csv, etc.
+                    advance();
+                    if (std::isalpha(static_cast<unsigned char>(current())) || current() == '_') {
+                        std::string format_name = read_identifier();
+                        // Store the format name in the token value
+                        tokens.emplace_back(TokenType::Format, format_name, token_pos);
+                    } else {
+                        throw LexerError("Expected format function name after '@' at position " + std::to_string(token_pos));
+                    }
+                }
+                break;
+                
             default:
                 if (std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
                     std::string id = read_identifier();

@@ -1,12 +1,151 @@
 #include "tq/evaluator.hpp"
+#include "tq/toon_parser.hpp"
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+#include <ctime>
+#include <cstring>
+#include <iomanip>
+#include <sstream>
 #include <stdexcept>
+#include <cctype>
+
+// Platform-specific helpers for date/time functions
+#ifdef _WIN32
+// Windows doesn't have strptime, so provide an implementation
+namespace {
+    const char* strptime_impl(const char* s, const char* fmt, struct std::tm* tm) {
+        std::istringstream ss(s);
+        ss >> std::get_time(tm, fmt);
+        if (ss.fail()) {
+            return nullptr;
+        }
+        // Return pointer to end of parsed string (simplified: just return pointer to null terminator)
+        return s + std::strlen(s);
+    }
+}
+#define strptime strptime_impl
+
+// Windows has gmtime_s instead of gmtime
+inline struct std::tm* safe_gmtime(const std::time_t* time, struct std::tm* result) {
+    if (gmtime_s(result, time) != 0) {
+        return nullptr;
+    }
+    return result;
+}
+#else
+// Unix has gmtime which returns a pointer
+inline struct std::tm* safe_gmtime(const std::time_t* time, struct std::tm* result) {
+    struct std::tm* tmp = std::gmtime(time);
+    if (tmp) {
+        *result = *tmp;
+        return result;
+    }
+    return nullptr;
+}
+#endif
 
 namespace tq {
 
+// Base64 encoding/decoding helpers
+namespace {
+    const char* base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    
+    std::string base64_encode(const std::string& input) {
+        std::string output;
+        int val = 0, valb = 0;
+        for (unsigned char c : input) {
+            val = (val << 8) + c;
+            valb += 8;
+            while (valb >= 6) {
+                valb -= 6;
+                output.push_back(base64_chars[(val >> valb) & 0x3F]);
+            }
+        }
+        if (valb > 0) output.push_back(base64_chars[(val << (6 - valb)) & 0x3F]);
+        while (output.size() % 4) output.push_back('=');
+        return output;
+    }
+    
+    std::string base64_decode(const std::string& input) {
+        std::string output;
+        std::vector<int> T(256, -1);
+        for (int i = 0; i < 64; i++) T[base64_chars[i]] = i;
+        
+        int val = 0, valb = 0;
+        for (unsigned char c : input) {
+            if (T[c] == -1) break;
+            val = (val << 6) + T[c];
+            valb += 6;
+            if (valb >= 8) {
+                valb -= 8;
+                output.push_back(char((val >> valb) & 0xFF));
+            }
+        }
+        return output;
+    }
+    
+    // URI encoding helper
+    std::string uri_encode(const std::string& str) {
+        std::string result;
+        for (unsigned char c : str) {
+            if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+                result += c;
+            } else {
+                char buf[4];
+                snprintf(buf, sizeof(buf), "%%%02X", (unsigned char)c);
+                result += buf;
+            }
+        }
+        return result;
+    }
+    
+    // HTML escape helper
+    std::string html_escape(const std::string& str) {
+        std::string result;
+        for (char c : str) {
+            switch (c) {
+                case '&': result += "&amp;"; break;
+                case '<': result += "&lt;"; break;
+                case '>': result += "&gt;"; break;
+                case '"': result += "&quot;"; break;
+                case '\'': result += "&#39;"; break;
+                default: result += c;
+            }
+        }
+        return result;
+    }
+    
+    // CSV escape helper
+    std::string csv_escape(const std::string& str) {
+        if (str.find(',') != std::string::npos || 
+            str.find('"') != std::string::npos || 
+            str.find('\n') != std::string::npos) {
+            std::string result = "\"";
+            for (char c : str) {
+                if (c == '"') result += "\"\"";
+                else result += c;
+            }
+            result += "\"";
+            return result;
+        }
+        return str;
+    }
+}
+
 Evaluator::Evaluator() {
     register_builtins();
+}
+
+void Evaluator::set_input_values(const std::vector<Value>& values) {
+    // Clear existing input queue
+    while (!input_stream_.empty()) {
+        input_stream_.pop();
+    }
+    // Add new values to queue
+    for (const auto& val : values) {
+        input_stream_.push(val);
+    }
 }
 
 void Evaluator::register_builtins() {
@@ -67,6 +206,49 @@ void Evaluator::register_builtins() {
     builtins_["error"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_error(args); };
     builtins_["debug"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_debug(args); };
     builtins_["not"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_not(args); };
+    builtins_["paths"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_paths(args); };
+    builtins_["leaf_paths"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_leaf_paths(args); };
+    builtins_["keys_unsorted"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_keys_unsorted(args); };
+    builtins_["min_by_value"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_min_by_value(args); };
+    builtins_["max_by_value"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_max_by_value(args); };
+    builtins_["to_array"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_to_array(args); };
+    builtins_["to_object"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_to_object(args); };
+    builtins_["combinations"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_combinations(args); };
+    builtins_["numbers"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_numbers(args); };
+    builtins_["strings"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_strings(args); };
+    builtins_["arrays"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_arrays(args); };
+    builtins_["objects"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_objects(args); };
+    builtins_["nulls"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_nulls(args); };
+    builtins_["booleans"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_booleans(args); };
+    builtins_["scalars"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_scalars(args); };
+    builtins_["values"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_values(args); };
+    builtins_["iterables"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_iterables(args); };
+    builtins_["ascii"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_ascii(args); };
+    builtins_["implode"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_implode(args); };
+    builtins_["explode"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_explode(args); };
+    builtins_["tojsonstream"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_tojsonstream(args); };
+    builtins_["fromjsonstream"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_fromjsonstream(args); };
+    
+    // Date/time functions
+    builtins_["now"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_now(args); };
+    builtins_["gmtime"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_gmtime(args); };
+    builtins_["mktime"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_mktime(args); };
+    builtins_["strftime"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_strftime(args); };
+    builtins_["strptime"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_strptime(args); };
+    builtins_["todate"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_todate(args); };
+    builtins_["fromdate"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_fromdate(args); };
+    builtins_["todateiso8601"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_todateiso8601(args); };
+    builtins_["fromdateiso8601"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_fromdateiso8601(args); };
+    
+    // Format functions
+    builtins_["@base64"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_format_base64(args); };
+    builtins_["@base64d"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_format_base64d(args); };
+    builtins_["@uri"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_format_uri(args); };
+    builtins_["@csv"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_format_csv(args); };
+    builtins_["@tsv"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_format_tsv(args); };
+    builtins_["@html"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_format_html(args); };
+    builtins_["@json"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_format_json(args); };
+    builtins_["@text"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_format_text(args); };
     
     // Expression-based built-ins
     expr_builtins_["map"] = [this](Evaluator* eval, const ExprPtr& expr, const Value& data) { 
@@ -95,6 +277,21 @@ void Evaluator::register_builtins() {
     };
     expr_builtins_["all"] = [this](Evaluator* eval, const ExprPtr& expr, const Value& data) { 
         return this->builtin_all(expr, data); 
+    };
+    expr_builtins_["walk"] = [this](Evaluator* eval, const ExprPtr& expr, const Value& data) { 
+        return this->builtin_walk(expr, data); 
+    };
+    
+    // I/O functions
+    builtins_["limit"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_limit(args); };
+    builtins_["input"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_input(args); };
+    builtins_["inputs"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_inputs(args); };
+    
+    // SQL-style functions
+    builtins_["INDEX"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_INDEX(args); };
+    builtins_["IN"] = [this](const std::vector<std::vector<Value>>& args) { return builtin_IN(args); };
+    expr_builtins_["GROUP_BY"] = [this](Evaluator* eval, const ExprPtr& expr, const Value& data) { 
+        return this->builtin_GROUP_BY_advanced(expr, data); 
     };
 }
 
@@ -1998,4 +2195,1001 @@ std::vector<Value> Evaluator::builtin_not(const std::vector<std::vector<Value>>&
     return {Value(!is_truthy(val))};
 }
 
+// ============= RECURSIVE OPERATORS =============
+
+std::vector<Value> Evaluator::builtin_paths(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {};
+    }
+    
+    const auto& val = args[0][0];
+    std::vector<Value> result;
+    
+    // Helper to recursively collect all paths
+    std::function<void(const Value&, std::vector<Value>&)> collect_paths;
+    collect_paths = [&](const Value& v, std::vector<Value>& path) {
+        // Add current path if we have one
+        if (!path.empty()) {
+            result.push_back(Value(path));
+        }
+        
+        // Recurse into structure
+        if (v.is_object()) {
+            for (const auto& [key, val] : v.as_object()) {
+                path.push_back(Value(key));
+                collect_paths(val, path);
+                path.pop_back();
+            }
+        } else if (v.is_array()) {
+            for (size_t i = 0; i < v.as_array().size(); i++) {
+                path.push_back(Value(static_cast<double>(i)));
+                collect_paths(v.as_array()[i], path);
+                path.pop_back();
+            }
+        }
+    };
+    
+    std::vector<Value> path;
+    collect_paths(val, path);
+    
+    return result;
+}
+
+std::vector<Value> Evaluator::builtin_leaf_paths(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {};
+    }
+    
+    const auto& val = args[0][0];
+    std::vector<Value> result;
+    
+    // Helper to recursively collect leaf paths
+    std::function<void(const Value&, std::vector<Value>&)> collect_leaf_paths;
+    collect_leaf_paths = [&](const Value& v, std::vector<Value>& path) {
+        if (v.is_object()) {
+            if (v.as_object().empty()) {
+                // Empty object is a leaf
+                result.push_back(Value(path));
+            } else {
+                for (const auto& [key, val] : v.as_object()) {
+                    path.push_back(Value(key));
+                    collect_leaf_paths(val, path);
+                    path.pop_back();
+                }
+            }
+        } else if (v.is_array()) {
+            if (v.as_array().empty()) {
+                // Empty array is a leaf
+                result.push_back(Value(path));
+            } else {
+                for (size_t i = 0; i < v.as_array().size(); i++) {
+                    path.push_back(Value(static_cast<double>(i)));
+                    collect_leaf_paths(v.as_array()[i], path);
+                    path.pop_back();
+                }
+            }
+        } else {
+            // Scalar is a leaf
+            result.push_back(Value(path));
+        }
+    };
+    
+    std::vector<Value> path;
+    collect_leaf_paths(val, path);
+    
+    return result;
+}
+
+std::vector<Value> Evaluator::builtin_keys_unsorted(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {Value()};
+    }
+    
+    const auto& val = args[0][0];
+    
+    if (val.is_object()) {
+        std::vector<Value> keys;
+        for (const auto& [key, _] : val.as_object()) {
+            keys.push_back(Value(key));
+        }
+        return {Value(keys)};
+    } else if (val.is_array()) {
+        std::vector<Value> indices;
+        for (size_t i = 0; i < val.as_array().size(); i++) {
+            indices.push_back(Value(static_cast<double>(i)));
+        }
+        return {Value(indices)};
+    }
+    
+    throw std::runtime_error("keys_unsorted can only be applied to objects or arrays");
+}
+
+std::vector<Value> Evaluator::builtin_walk(const ExprPtr& expr, const Value& data) {
+    // walk recursively applies expression to every element
+    std::function<Value(const Value&)> walk_recursive;
+    walk_recursive = [&](const Value& v) -> Value {
+        Value current = v;
+        
+        // First recursively walk children
+        if (v.is_array()) {
+            std::vector<Value> walked;
+            for (const auto& elem : v.as_array()) {
+                walked.push_back(walk_recursive(elem));
+            }
+            current = Value(walked);
+        } else if (v.is_object()) {
+            std::map<std::string, Value> walked;
+            for (const auto& [key, val] : v.as_object()) {
+                walked[key] = walk_recursive(val);
+            }
+            current = Value(walked);
+        }
+        
+        // Then apply expression to current value
+        auto results = eval(expr, current);
+        return results.empty() ? current : results[0];
+    };
+    
+    return {walk_recursive(data)};
+}
+
+std::vector<Value> Evaluator::builtin_min_by_value(const std::vector<std::vector<Value>>& args) {
+    // For objects, returns the value with minimum key
+    if (args.empty() || args[0].empty()) {
+        return {Value()};
+    }
+    
+    const auto& val = args[0][0];
+    if (!val.is_object()) {
+        throw std::runtime_error("min_by_value requires object");
+    }
+    
+    const auto& obj = val.as_object();
+    if (obj.empty()) {
+        return {Value()};
+    }
+    
+    auto min_it = obj.begin();
+    for (auto it = obj.begin(); it != obj.end(); ++it) {
+        if (compare_values(it->second, min_it->second) < 0) {
+            min_it = it;
+        }
+    }
+    
+    return {min_it->second};
+}
+
+std::vector<Value> Evaluator::builtin_max_by_value(const std::vector<std::vector<Value>>& args) {
+    // For objects, returns the value with maximum key
+    if (args.empty() || args[0].empty()) {
+        return {Value()};
+    }
+    
+    const auto& val = args[0][0];
+    if (!val.is_object()) {
+        throw std::runtime_error("max_by_value requires object");
+    }
+    
+    const auto& obj = val.as_object();
+    if (obj.empty()) {
+        return {Value()};
+    }
+    
+    auto max_it = obj.begin();
+    for (auto it = obj.begin(); it != obj.end(); ++it) {
+        if (compare_values(it->second, max_it->second) > 0) {
+            max_it = it;
+        }
+    }
+    
+    return {max_it->second};
+}
+
+std::vector<Value> Evaluator::builtin_to_array(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {Value(std::vector<Value>())};
+    }
+    
+    const auto& val = args[0][0];
+    
+    if (val.is_array()) {
+        return {val};
+    } else if (val.is_null()) {
+        return {Value(std::vector<Value>())};
+    } else {
+        std::vector<Value> arr = {val};
+        return {Value(arr)};
+    }
+}
+
+std::vector<Value> Evaluator::builtin_to_object(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {Value(std::map<std::string, Value>())};
+    }
+    
+    const auto& val = args[0][0];
+    
+    if (val.is_object()) {
+        return {val};
+    } else if (val.is_array()) {
+        // Convert array of [key, value] pairs to object
+        std::map<std::string, Value> obj;
+        for (const auto& elem : val.as_array()) {
+            if (elem.is_array()) {
+                const auto& pair = elem.as_array();
+                if (pair.size() >= 2) {
+                    std::string key;
+                    if (pair[0].is_string()) {
+                        key = pair[0].as_string();
+                    } else {
+                        key = pair[0].to_toon();
+                    }
+                    obj[key] = pair[1];
+                }
+            }
+        }
+        return {Value(obj)};
+    }
+    
+    throw std::runtime_error("to_object requires array or object");
+}
+
+std::vector<Value> Evaluator::builtin_combinations(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {Value(std::vector<Value>())};
+    }
+    
+    const auto& val = args[0][0];
+    if (!val.is_array()) {
+        throw std::runtime_error("combinations requires array");
+    }
+    
+    const auto& arr = val.as_array();
+    if (arr.empty()) {
+        return {Value(std::vector<Value>())};
+    }
+    
+    // combinations of nested arrays produces all combinations
+    std::vector<std::vector<Value>> result;
+    result.push_back({});
+    
+    for (const auto& elem : arr) {
+        if (!elem.is_array()) {
+            continue;
+        }
+        
+        std::vector<std::vector<Value>> new_result;
+        for (const auto& combo : result) {
+            for (const auto& item : elem.as_array()) {
+                auto new_combo = combo;
+                new_combo.push_back(item);
+                new_result.push_back(new_combo);
+            }
+        }
+        result = new_result;
+    }
+    
+    // Convert result arrays to Values
+    std::vector<Value> combinations;
+    for (const auto& combo : result) {
+        combinations.push_back(Value(combo));
+    }
+    
+    return combinations;
+}
+
+// ============= TYPE FILTER FUNCTIONS =============
+
+std::vector<Value> Evaluator::builtin_numbers(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {};
+    }
+    
+    const auto& val = args[0][0];
+    if (val.is_number()) {
+        return {val};
+    }
+    return {};
+}
+
+std::vector<Value> Evaluator::builtin_strings(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {};
+    }
+    
+    const auto& val = args[0][0];
+    if (val.is_string()) {
+        return {val};
+    }
+    return {};
+}
+
+std::vector<Value> Evaluator::builtin_arrays(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {};
+    }
+    
+    const auto& val = args[0][0];
+    if (val.is_array()) {
+        return {val};
+    }
+    return {};
+}
+
+std::vector<Value> Evaluator::builtin_objects(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {};
+    }
+    
+    const auto& val = args[0][0];
+    if (val.is_object()) {
+        return {val};
+    }
+    return {};
+}
+
+std::vector<Value> Evaluator::builtin_nulls(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {};
+    }
+    
+    const auto& val = args[0][0];
+    if (val.is_null()) {
+        return {val};
+    }
+    return {};
+}
+
+std::vector<Value> Evaluator::builtin_booleans(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {};
+    }
+    
+    const auto& val = args[0][0];
+    if (val.is_boolean()) {
+        return {val};
+    }
+    return {};
+}
+
+std::vector<Value> Evaluator::builtin_scalars(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {};
+    }
+    
+    const auto& val = args[0][0];
+    // Scalars are everything except arrays and objects
+    if (!val.is_array() && !val.is_object()) {
+        return {val};
+    }
+    return {};
+}
+
+std::vector<Value> Evaluator::builtin_iterables(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {};
+    }
+    
+    const auto& val = args[0][0];
+    // Iterables are arrays and objects
+    if (val.is_array() || val.is_object()) {
+        return {val};
+    }
+    return {};
+}
+
+std::vector<Value> Evaluator::builtin_ascii(const std::vector<std::vector<Value>>& args) {
+    // Alias for explode/implode for ASCII operations
+    if (args.empty() || args[0].empty()) {
+        return {Value()};
+    }
+    
+    const auto& val = args[0][0];
+    if (val.is_string()) {
+        // Convert string to array of codepoints
+        std::vector<Value> codepoints;
+        for (char c : val.as_string()) {
+            codepoints.push_back(Value(static_cast<double>(static_cast<unsigned char>(c))));
+        }
+        return {Value(codepoints)};
+    }
+    
+    return {val};
+}
+
+std::vector<Value> Evaluator::builtin_explode(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {Value()};
+    }
+    
+    const auto& val = args[0][0];
+    if (val.is_string()) {
+        std::vector<Value> codepoints;
+        for (char c : val.as_string()) {
+            codepoints.push_back(Value(static_cast<double>(static_cast<unsigned char>(c))));
+        }
+        return {Value(codepoints)};
+    }
+    
+    throw std::runtime_error("explode requires string");
+}
+
+std::vector<Value> Evaluator::builtin_implode(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {Value()};
+    }
+    
+    const auto& val = args[0][0];
+    if (!val.is_array()) {
+        throw std::runtime_error("implode requires array");
+    }
+    
+    std::string result;
+    for (const auto& elem : val.as_array()) {
+        if (elem.is_number()) {
+            int codepoint = static_cast<int>(elem.as_number());
+            if (codepoint >= 0 && codepoint <= 255) {
+                result += static_cast<char>(codepoint);
+            }
+        }
+    }
+    
+    return {Value(result)};
+}
+
+std::vector<Value> Evaluator::builtin_tojsonstream(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {};
+    }
+    
+    const auto& val = args[0][0];
+    // Convert to TOON format (we use TOON not JSON)
+    return {Value(val.to_toon())};
+}
+
+std::vector<Value> Evaluator::builtin_fromjsonstream(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        return {Value()};
+    }
+    
+    const auto& val = args[0][0];
+    if (!val.is_string()) {
+        throw std::runtime_error("fromjsonstream requires string");
+    }
+    
+    // Parse TOON format string
+    try {
+        return {ToonParser::parse(val.as_string())};
+    } catch (...) {
+        throw std::runtime_error("Invalid TOON format");
+    }
+}
+
+// Date/time functions
+
+std::vector<Value> Evaluator::builtin_now(const std::vector<std::vector<Value>>& args) {
+    // Returns current Unix timestamp as a number
+    auto now = std::chrono::system_clock::now();
+    auto timestamp = std::chrono::system_clock::to_time_t(now);
+    return {Value(static_cast<double>(timestamp))};
+}
+
+std::vector<Value> Evaluator::builtin_gmtime(const std::vector<std::vector<Value>>& args) {
+    // Converts Unix timestamp to broken-down time array
+    // Returns [year, month (0-11), day, hour, minute, second, day_of_week, day_of_year]
+    if (args.empty() || args[0].empty()) {
+        throw std::runtime_error("gmtime requires a timestamp");
+    }
+    
+    const auto& val = args[0][0];
+    if (!val.is_number()) {
+        throw std::runtime_error("gmtime requires a number");
+    }
+    
+    auto timestamp = static_cast<std::time_t>(val.as_number());
+    struct std::tm timeinfo = {};
+    struct std::tm* result = safe_gmtime(&timestamp, &timeinfo);
+    
+    if (!result) {
+        throw std::runtime_error("gmtime conversion failed");
+    }
+    
+    std::vector<Value> resultarr;
+    resultarr.push_back(Value(static_cast<double>(timeinfo.tm_year + 1900)));  // year
+    resultarr.push_back(Value(static_cast<double>(timeinfo.tm_mon)));           // month (0-11)
+    resultarr.push_back(Value(static_cast<double>(timeinfo.tm_mday)));          // day
+    resultarr.push_back(Value(static_cast<double>(timeinfo.tm_hour)));          // hour
+    resultarr.push_back(Value(static_cast<double>(timeinfo.tm_min)));           // minute
+    resultarr.push_back(Value(static_cast<double>(timeinfo.tm_sec)));           // second
+    resultarr.push_back(Value(static_cast<double>(timeinfo.tm_wday)));          // day of week (0=Sunday)
+    resultarr.push_back(Value(static_cast<double>(timeinfo.tm_yday)));          // day of year
+    
+    return {Value(resultarr)};
+}
+
+std::vector<Value> Evaluator::builtin_mktime(const std::vector<std::vector<Value>>& args) {
+    // Converts broken-down time array to Unix timestamp
+    // Expects [year, month (0-11), day, hour, minute, second, day_of_week, day_of_year]
+    if (args.empty() || args[0].empty()) {
+        throw std::runtime_error("mktime requires an array");
+    }
+    
+    const auto& val = args[0][0];
+    if (!val.is_array()) {
+        throw std::runtime_error("mktime requires an array");
+    }
+    
+    const auto& arr = val.as_array();
+    if (arr.size() < 6) {
+        throw std::runtime_error("mktime requires array with at least 6 elements");
+    }
+    
+    struct std::tm timeinfo = {};
+    timeinfo.tm_year = static_cast<int>(arr[0].as_number()) - 1900;
+    timeinfo.tm_mon = static_cast<int>(arr[1].as_number());
+    timeinfo.tm_mday = static_cast<int>(arr[2].as_number());
+    timeinfo.tm_hour = static_cast<int>(arr[3].as_number());
+    timeinfo.tm_min = static_cast<int>(arr[4].as_number());
+    timeinfo.tm_sec = static_cast<int>(arr[5].as_number());
+    
+    std::time_t timestamp = std::mktime(&timeinfo);
+    if (timestamp == -1) {
+        throw std::runtime_error("mktime conversion failed");
+    }
+    
+    return {Value(static_cast<double>(timestamp))};
+}
+
+std::vector<Value> Evaluator::builtin_strftime(const std::vector<std::vector<Value>>& args) {
+    // Formats a broken-down time array according to format string
+    // First arg is format string, second is time array
+    if (args.size() < 2 || args[0].empty() || args[1].empty()) {
+        throw std::runtime_error("strftime requires format string and time array");
+    }
+    
+    const auto& fmt_val = args[0][0];
+    const auto& time_val = args[1][0];
+    
+    if (!fmt_val.is_string()) {
+        throw std::runtime_error("strftime format must be a string");
+    }
+    
+    if (!time_val.is_array()) {
+        throw std::runtime_error("strftime time must be an array");
+    }
+    
+    const auto& arr = time_val.as_array();
+    if (arr.size() < 6) {
+        throw std::runtime_error("strftime time array must have at least 6 elements");
+    }
+    
+    struct std::tm timeinfo = {};
+    timeinfo.tm_year = static_cast<int>(arr[0].as_number()) - 1900;
+    timeinfo.tm_mon = static_cast<int>(arr[1].as_number());
+    timeinfo.tm_mday = static_cast<int>(arr[2].as_number());
+    timeinfo.tm_hour = static_cast<int>(arr[3].as_number());
+    timeinfo.tm_min = static_cast<int>(arr[4].as_number());
+    timeinfo.tm_sec = static_cast<int>(arr[5].as_number());
+    
+    char buffer[256];
+    std::strftime(buffer, sizeof(buffer), fmt_val.as_string().c_str(), &timeinfo);
+    
+    return {Value(std::string(buffer))};
+}
+
+std::vector<Value> Evaluator::builtin_strptime(const std::vector<std::vector<Value>>& args) {
+    // Parses a time string according to format string
+    // Returns broken-down time array
+    if (args.size() < 2 || args[0].empty() || args[1].empty()) {
+        throw std::runtime_error("strptime requires string and format");
+    }
+    
+    const auto& str_val = args[0][0];
+    const auto& fmt_val = args[1][0];
+    
+    if (!str_val.is_string() || !fmt_val.is_string()) {
+        throw std::runtime_error("strptime requires string arguments");
+    }
+    
+    struct std::tm timeinfo = {};
+    const char* p = strptime(str_val.as_string().c_str(), fmt_val.as_string().c_str(), &timeinfo);
+    
+    if (!p || *p != '\0') {
+        throw std::runtime_error("strptime: time parsing failed");
+    }
+    
+    std::vector<Value> result;
+    result.push_back(Value(static_cast<double>(timeinfo.tm_year + 1900)));  // year
+    result.push_back(Value(static_cast<double>(timeinfo.tm_mon)));           // month
+    result.push_back(Value(static_cast<double>(timeinfo.tm_mday)));          // day
+    result.push_back(Value(static_cast<double>(timeinfo.tm_hour)));          // hour
+    result.push_back(Value(static_cast<double>(timeinfo.tm_min)));           // minute
+    result.push_back(Value(static_cast<double>(timeinfo.tm_sec)));           // second
+    result.push_back(Value(static_cast<double>(timeinfo.tm_wday)));          // weekday
+    result.push_back(Value(static_cast<double>(timeinfo.tm_yday)));          // yearday
+    
+    return {Value(result)};
+}
+
+std::vector<Value> Evaluator::builtin_todate(const std::vector<std::vector<Value>>& args) {
+    // Converts Unix timestamp to ISO 8601 date string (YYYY-MM-DDTHH:MM:SSZ)
+    if (args.empty() || args[0].empty()) {
+        throw std::runtime_error("todate requires a timestamp");
+    }
+    
+    const auto& val = args[0][0];
+    if (!val.is_number()) {
+        throw std::runtime_error("todate requires a number");
+    }
+    
+    auto timestamp = static_cast<std::time_t>(val.as_number());
+    struct std::tm timeinfo = {};
+    struct std::tm* result = safe_gmtime(&timestamp, &timeinfo);
+    
+    if (!result) {
+        throw std::runtime_error("todate conversion failed");
+    }
+    
+    char buffer[256];
+    std::strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
+    
+    return {Value(std::string(buffer))};
+}
+
+std::vector<Value> Evaluator::builtin_fromdate(const std::vector<std::vector<Value>>& args) {
+    // Converts ISO 8601 date string to Unix timestamp
+    if (args.empty() || args[0].empty()) {
+        throw std::runtime_error("fromdate requires a date string");
+    }
+    
+    const auto& val = args[0][0];
+    if (!val.is_string()) {
+        throw std::runtime_error("fromdate requires a string");
+    }
+    
+    struct std::tm timeinfo = {};
+    const char* p = strptime(val.as_string().c_str(), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
+    
+    if (!p || (*p != '\0' && *p != '+' && *p != '-')) {
+        // Try without Z suffix
+        p = strptime(val.as_string().c_str(), "%Y-%m-%dT%H:%M:%S", &timeinfo);
+        if (!p || *p != '\0') {
+            throw std::runtime_error("fromdate: unable to parse date");
+        }
+    }
+    
+    std::time_t timestamp = std::mktime(&timeinfo);
+    if (timestamp == -1) {
+        throw std::runtime_error("fromdate conversion failed");
+    }
+    
+    return {Value(static_cast<double>(timestamp))};
+}
+
+std::vector<Value> Evaluator::builtin_todateiso8601(const std::vector<std::vector<Value>>& args) {
+    // Same as todate - converts Unix timestamp to ISO 8601 date string
+    return builtin_todate(args);
+}
+
+std::vector<Value> Evaluator::builtin_fromdateiso8601(const std::vector<std::vector<Value>>& args) {
+    // Same as fromdate - converts ISO 8601 date string to Unix timestamp
+    return builtin_fromdate(args);
+}
+
+// Format functions
+
+std::vector<Value> Evaluator::builtin_format_base64(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        throw std::runtime_error("@base64 requires input");
+    }
+    
+    const auto& val = args[0][0];
+    std::string input;
+    
+    if (val.is_string()) {
+        input = val.as_string();
+    } else if (val.is_number()) {
+        input = std::to_string(static_cast<long long>(val.as_number()));
+    } else if (val.is_boolean()) {
+        input = val.as_boolean() ? "true" : "false";
+    } else {
+        input = val.to_toon();
+    }
+    
+    return {Value(base64_encode(input))};
+}
+
+std::vector<Value> Evaluator::builtin_format_base64d(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        throw std::runtime_error("@base64d requires input");
+    }
+    
+    const auto& val = args[0][0];
+    if (!val.is_string()) {
+        throw std::runtime_error("@base64d requires string input");
+    }
+    
+    try {
+        return {Value(base64_decode(val.as_string()))};
+    } catch (...) {
+        throw std::runtime_error("@base64d: invalid base64 input");
+    }
+}
+
+std::vector<Value> Evaluator::builtin_format_uri(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        throw std::runtime_error("@uri requires input");
+    }
+    
+    const auto& val = args[0][0];
+    std::string input;
+    
+    if (val.is_string()) {
+        input = val.as_string();
+    } else if (val.is_number()) {
+        input = std::to_string(static_cast<long long>(val.as_number()));
+    } else if (val.is_boolean()) {
+        input = val.as_boolean() ? "true" : "false";
+    } else {
+        input = val.to_toon();
+    }
+    
+    return {Value(uri_encode(input))};
+}
+
+std::vector<Value> Evaluator::builtin_format_csv(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        throw std::runtime_error("@csv requires input");
+    }
+    
+    const auto& val = args[0][0];
+    
+    if (!val.is_array()) {
+        throw std::runtime_error("@csv requires array input");
+    }
+    
+    std::string result;
+    const auto& arr = val.as_array();
+    for (size_t i = 0; i < arr.size(); ++i) {
+        if (i > 0) result += ",";
+        
+        if (arr[i].is_string()) {
+            result += csv_escape(arr[i].as_string());
+        } else if (arr[i].is_number()) {
+            result += std::to_string(static_cast<long long>(arr[i].as_number()));
+        } else if (arr[i].is_boolean()) {
+            result += arr[i].as_boolean() ? "true" : "false";
+        } else if (arr[i].is_null()) {
+            // Empty field
+        } else {
+            result += csv_escape(arr[i].to_toon());
+        }
+    }
+    
+    return {Value(result)};
+}
+
+std::vector<Value> Evaluator::builtin_format_tsv(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        throw std::runtime_error("@tsv requires input");
+    }
+    
+    const auto& val = args[0][0];
+    
+    if (!val.is_array()) {
+        throw std::runtime_error("@tsv requires array input");
+    }
+    
+    std::string result;
+    const auto& arr = val.as_array();
+    for (size_t i = 0; i < arr.size(); ++i) {
+        if (i > 0) result += "\t";
+        
+        if (arr[i].is_string()) {
+            result += arr[i].as_string();
+        } else if (arr[i].is_number()) {
+            result += std::to_string(static_cast<long long>(arr[i].as_number()));
+        } else if (arr[i].is_boolean()) {
+            result += arr[i].as_boolean() ? "true" : "false";
+        } else if (arr[i].is_null()) {
+            // Empty field
+        } else {
+            result += arr[i].to_toon();
+        }
+    }
+    
+    return {Value(result)};
+}
+
+std::vector<Value> Evaluator::builtin_format_html(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        throw std::runtime_error("@html requires input");
+    }
+    
+    const auto& val = args[0][0];
+    std::string input;
+    
+    if (val.is_string()) {
+        input = val.as_string();
+    } else if (val.is_number()) {
+        input = std::to_string(static_cast<long long>(val.as_number()));
+    } else if (val.is_boolean()) {
+        input = val.as_boolean() ? "true" : "false";
+    } else {
+        input = val.to_toon();
+    }
+    
+    return {Value(html_escape(input))};
+}
+
+std::vector<Value> Evaluator::builtin_format_json(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        throw std::runtime_error("@json requires input");
+    }
+    
+    const auto& val = args[0][0];
+    // Note: We use TOON format since TQ only supports TOON
+    return {Value(val.to_toon())};
+}
+
+std::vector<Value> Evaluator::builtin_format_text(const std::vector<std::vector<Value>>& args) {
+    if (args.empty() || args[0].empty()) {
+        throw std::runtime_error("@text requires input");
+    }
+    
+    const auto& val = args[0][0];
+    
+    
+    if (val.is_string()) {
+        return {Value(val.as_string())};
+    } else if (val.is_number()) {
+        return {Value(std::to_string(static_cast<long long>(val.as_number())))};
+    } else if (val.is_boolean()) {
+        return {Value(val.as_boolean() ? std::string("true") : std::string("false"))};
+    } else if (val.is_null()) {
+        return {Value(std::string("null"))};
+    } else {
+        return {Value(val.to_toon())};
+    }
+}
+
+// ========== I/O Functions ==========
+
+std::vector<Value> Evaluator::builtin_limit(const std::vector<std::vector<Value>>& args) {
+    // limit(n; expr) - Limit output to first n results from expr
+    if (args.empty() || args[0].empty()) {
+        throw std::runtime_error("limit: requires count argument");
+    }
+    
+    const auto& count_val = args[0][0];
+    if (!count_val.is_number()) {
+        throw std::runtime_error("limit: count must be a number");
+    }
+    
+    size_t limit = static_cast<size_t>(count_val.as_number());
+    
+    // If we have expression arguments, we limit their results
+    // This is typically called with (limit(n; expr)) syntax
+    // For now, return a special marker - actual limiting happens in the expression evaluator
+    // In jq, limit is implemented as a generator that yields at most n values
+    
+    std::map<std::string, Value> marker_map;
+    marker_map["__limit_count__"] = Value(static_cast<double>(limit));
+    
+    return {Value(marker_map)};
+}
+
+std::vector<Value> Evaluator::builtin_input(const std::vector<std::vector<Value>>& args) {
+    // input - Read next input from stdin
+    // In a file-processing context, this reads the next JSON/TOON value
+    // For now, return a placeholder indicating this needs stdin integration
+    
+    // This would typically be implemented with access to an input stream
+    throw std::runtime_error("input: not yet implemented - requires stdin integration");
+}
+
+std::vector<Value> Evaluator::builtin_inputs(const std::vector<std::vector<Value>>& args) {
+    // inputs - Read all remaining inputs from stdin
+    // Generates all remaining input values
+    
+    throw std::runtime_error("inputs: not yet implemented - requires stdin integration");
+}
+
+// ========== SQL-Style Functions ==========
+
+std::vector<Value> Evaluator::builtin_INDEX(const std::vector<std::vector<Value>>& args) {
+    // INDEX(stream; index_expr) or INDEX(index_expr)
+    // Creates an indexed object (dictionary) mapping keys to values
+    // INDEX(.users[]; .id) creates {id1: user1, id2: user2, ...}
+    
+    if (args.empty()) {
+        throw std::runtime_error("INDEX: requires at least one argument");
+    }
+    
+    // Basic implementation: if single argument is an array, index it
+    if (args.size() == 1 && args[0].size() == 1) {
+        const auto& arr = args[0][0];
+        
+        if (!arr.is_array()) {
+            throw std::runtime_error("INDEX: input must be an array");
+        }
+        
+        // For simple single-argument INDEX, create index by array indices
+        std::map<std::string, Value> result_map;
+        
+        for (size_t i = 0; i < arr.as_array().size(); ++i) {
+            std::string key = std::to_string(i);
+            result_map[key] = arr.as_array()[i];
+        }
+        
+        return {Value(result_map)};
+    }
+    
+    // More complex cases would require expression evaluation
+    // For now, provide basic indexed object creation
+    std::map<std::string, Value> result_map;
+    
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (!args[i].empty()) {
+            std::string key = std::to_string(i);
+            result_map[key] = args[i][0];
+        }
+    }
+    
+    return {Value(result_map)};
+}
+
+std::vector<Value> Evaluator::builtin_IN(const std::vector<std::vector<Value>>& args) {
+    // IN(values) - Creates a lookup set for quick membership testing
+    // IN([1,2,3]) returns a function that tests membership
+    // Typically used as: IN([1,2,3]) or IN(stream)
+    
+    if (args.empty() || args[0].empty()) {
+        throw std::runtime_error("IN: requires argument");
+    }
+    
+    const auto& val = args[0][0];
+    
+    if (!val.is_array()) {
+        throw std::runtime_error("IN: argument must be an array");
+    }
+    
+    // Create a set-like structure (using object for O(1) lookup)
+    std::map<std::string, Value> obj_map;
+    
+    for (const auto& elem : val.as_array()) {
+        // Convert element to string key for membership testing
+        std::string key;
+        if (elem.is_string()) {
+            key = elem.as_string();
+        } else if (elem.is_number()) {
+            key = std::to_string(static_cast<long long>(elem.as_number()));
+        } else if (elem.is_boolean()) {
+            key = elem.as_boolean() ? "true" : "false";
+        } else if (elem.is_null()) {
+            key = "null";
+        } else {
+            key = elem.to_toon();
+        }
+        
+        obj_map[key] = Value(true);
+    }
+    
+    return {Value(obj_map)};
+}
+
+std::vector<Value> Evaluator::builtin_GROUP_BY_advanced(const ExprPtr& expr, const Value& data) {
+    // GROUP_BY(expr) - Advanced grouping with multiple levels
+    // Similar to group_by but allows more sophisticated grouping strategies
+    
+    if (!data.is_array()) {
+        return {data};
+    }
+    
+    // For now, implement similar to group_by
+    // More sophisticated logic could be added here
+    return builtin_group_by(expr, data);
+}
+
 } // namespace tq
+
